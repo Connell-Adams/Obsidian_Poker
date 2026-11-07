@@ -1,11 +1,16 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { ServiceContext } from './app/context';
+import { OnlineContext, ServiceContext } from './app/context';
 import { GameService } from './app/gameService';
+import { OnlineService } from './online/onlineService';
 import { App } from './ui/App';
 import './ui/styles.css';
 
 const root = createRoot(document.getElementById('root')!);
+
+// Online services start alongside, but offline play never waits for them.
+const online = new OnlineService();
+void online.start();
 
 GameService.create()
   .then((service) => {
@@ -16,7 +21,9 @@ GameService.create()
     root.render(
       <StrictMode>
         <ServiceContext.Provider value={service}>
-          <App />
+          <OnlineContext.Provider value={online}>
+            <App />
+          </OnlineContext.Provider>
         </ServiceContext.Provider>
       </StrictMode>,
     );

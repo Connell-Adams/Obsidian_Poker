@@ -118,7 +118,7 @@ export function CashLobby() {
     <div className="screen">
       <header className="screen-head">
         <h1>Cash Games</h1>
-        <p>Bankroll: <b>{fmt(career.bankroll)}</b> chips</p>
+        <p><span className="chip-badge chip-offline">OFFLINE CHIPS</span> Against bots with your <b>{fmt(career.bankroll)}</b> offline chips. Online chips are never used here.</p>
       </header>
       {session ? (
         <div className="callout">
@@ -277,7 +277,7 @@ export function TournamentLobby() {
     <div className="screen">
       <header className="screen-head">
         <h1>Tournaments</h1>
-        <p>Bankroll: <b>{fmt(career.bankroll)}</b> chips</p>
+        <p><span className="chip-badge chip-offline">OFFLINE CHIPS</span> Against bots with your <b>{fmt(career.bankroll)}</b> offline chips. Online chips are never used here.</p>
       </header>
       {session && (
         <div className="callout">

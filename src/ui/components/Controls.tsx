@@ -17,7 +17,7 @@ const PRESET_LABEL = (p: number): string => {
 };
 
 export interface ActionPanelProps {
-  controller: TableController;
+  controller: ActionTarget;
   view: TableView;
   legal: LegalActions;
   presets: readonly number[];
@@ -27,6 +27,12 @@ export interface ActionPanelProps {
 }
 
 const FOCUS_GRACE_MS = 350;
+
+/** Where the buttons send moves: an offline table, or the online game server. */
+export interface ActionTarget {
+  heroAct(action: PlayerAction): boolean;
+  useTimeBank(seconds?: number): boolean;
+}
 
 /** Betting controls. They only ever talk to this table's controller, so a click cannot land elsewhere. */
 export function ActionPanel({ controller, view, legal, presets, isFocused, hotkeys }: ActionPanelProps) {
@@ -167,7 +173,7 @@ export function ActionPanel({ controller, view, legal, presets, isFocused, hotke
         )}
         <div className={cx('clock-block', urgent && 'urgent')} aria-live="off">
           <span className="clock-seconds" aria-label={`${secondsLeft} seconds left`}>{secondsLeft}</span>
-          <button
+          {view.timeBank > 0 && <button
             type="button"
             className="timebank"
             disabled={view.timeBank <= 0}
@@ -175,7 +181,7 @@ export function ActionPanel({ controller, view, legal, presets, isFocused, hotke
             title="Use time bank: adds up to 15 seconds"
           >
             +15s <small>{Math.floor(view.timeBank)}s</small>
-          </button>
+          </button>}
         </div>
       </div>
       {view.preActionNote && <div className="panel-note" role="status">{view.preActionNote}</div>}

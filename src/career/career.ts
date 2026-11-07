@@ -12,7 +12,14 @@ export type LedgerKind =
   | 'tournament_prize'
   | 'tournament_refund'
   | 'recovery'
-  | 'reload';
+  /** Retired free reload from earlier versions. Kept so old ledgers still load. */
+  | 'reload'
+  /** Offline chips the player chose to add. Never counted as winnings. */
+  | 'offline_add'
+  /** Offline chips the player chose to remove. Never counted as losses. */
+  | 'offline_remove'
+  /** The player reset their offline bankroll to the starting amount. */
+  | 'offline_reset';
 
 export interface LedgerEntry {
   id: string;
@@ -64,11 +71,25 @@ export interface CareerProfile {
   longestWinStreak: number;
   longestLoseStreak: number;
   currentStreak: number;
+  /**
+   * Offline lifetime profit and loss from completed sessions only: cash-out minus
+   * buy-ins for cash games, prize minus entries for tournaments. Chip additions,
+   * removals and resets never touch it.
+   */
+  sessionPL: number;
+  sessionsCompleted: number;
+  sessionsWon: number;
+  sessionsLost: number;
+  chipsAdded: number;
+  chipsRemoved: number;
+  bankrollResets: number;
 }
 
-export const PROFILE_SCHEMA = 1;
+export const PROFILE_SCHEMA = 2;
 export const DEFAULT_STARTING_BANKROLL = 25000;
-export const RELOAD_AMOUNT = 10000;
+/** Largest single offline adjustment, and the most an offline bankroll can hold. */
+export const MAX_OFFLINE_ADJUSTMENT = 100_000_000;
+export const MAX_OFFLINE_BANKROLL = 1_000_000_000_000;
 export const MAX_STORED_HANDS = 20000;
 const PROFILE_KEY = 'profile';
 
@@ -102,6 +123,13 @@ export function newProfile(now: number, startingBankroll = DEFAULT_STARTING_BANK
     longestWinStreak: 0,
     longestLoseStreak: 0,
     currentStreak: 0,
+    sessionPL: 0,
+    sessionsCompleted: 0,
+    sessionsWon: 0,
+    sessionsLost: 0,
+    chipsAdded: 0,
+    chipsRemoved: 0,
+    bankrollResets: 0,
   };
 }
 
@@ -113,6 +141,12 @@ export function validateProfile(raw: unknown): CareerProfile | null {
   const p = raw as Partial<CareerProfile>;
   const template = newProfile(0);
   const merged = { ...template, ...p } as CareerProfile;
+  // Version 1 had no session P/L. Its best estimate is the bankroll's change minus free reloads.
+  if (p.sessionPL === undefined && isInt(p.bankroll) && isInt(p.startingBankroll)) {
+    merged.sessionPL = p.bankroll - p.startingBankroll - (isInt(p.reloads) ? p.reloads : 0);
+    merged.sessionsCompleted = (isInt(p.cashSessions) ? p.cashSessions : 0) + (isInt(p.tournamentsPlayed) ? p.tournamentsPlayed : 0);
+  }
+  merged.schema = PROFILE_SCHEMA;
   const intFields: Array<keyof CareerProfile> = [
     'startingBankroll',
     'bankroll',
@@ -124,6 +158,9 @@ export function validateProfile(raw: unknown): CareerProfile | null {
     'handsPlayed',
     'tournamentsPlayed',
     'tournamentWins',
+    'sessionPL',
+    'chipsAdded',
+    'chipsRemoved',
   ];
   for (const key of intFields) if (!isInt(merged[key])) return null;
   if (merged.bankroll < 0) return null;
@@ -206,9 +243,9 @@ export class Career {
     return this.profile.bankroll;
   }
 
-  /** Lifetime profit excludes free reloads. */
+  /** Offline lifetime P/L from completed sessions. Adding or removing chips never changes it. */
   get netProfit(): number {
-    return this.profile.bankroll - this.profile.startingBankroll - this.profile.reloads;
+    return this.profile.sessionPL;
   }
 
   private makeEntry(kind: LedgerKind, amount: number, ref: string, note: string, balanceAfter: number): LedgerEntry {
@@ -276,6 +313,15 @@ export class Career {
       case 'reload':
         p.reloads += amount;
         break;
+      case 'offline_add':
+        p.chipsAdded += amount;
+        break;
+      case 'offline_remove':
+        p.chipsRemoved += -amount;
+        break;
+      case 'offline_reset':
+        p.bankrollResets++;
+        break;
       default:
     }
     this.enqueue([{ store: 'ledger', key: entry.id, value: entry }, { store: 'meta', key: PROFILE_KEY, value: p }, ...extraOps]);
@@ -292,10 +338,25 @@ export class Career {
     return entries.sort((a, b) => a.id.localeCompare(b.id));
   }
 
-  /** Free chips when the player can no longer afford to play. Tracked apart from profit. */
-  reload(): ApplyResult {
-    if (this.profile.bankroll >= RELOAD_AMOUNT / 10) return { ok: false, error: 'Reloads are only available when you are nearly out of chips' };
-    return this.apply('reload', RELOAD_AMOUNT, `reload:${this.now()}:${this.entrySeq}`, 'Bankroll reload');
+  /** Adds offline chips. Free and unlimited by design, and never counted as winnings. */
+  addOfflineChips(amount: number): ApplyResult {
+    if (!Number.isSafeInteger(amount) || amount <= 0) return { ok: false, error: 'Enter a whole number of chips above zero' };
+    if (amount > MAX_OFFLINE_ADJUSTMENT) return { ok: false, error: `You can add at most ${MAX_OFFLINE_ADJUSTMENT.toLocaleString()} chips at a time` };
+    if (this.profile.bankroll + amount > MAX_OFFLINE_BANKROLL) return { ok: false, error: 'That would exceed the largest bankroll the game supports' };
+    return this.apply('offline_add', amount, `offline_add:${this.now()}:${this.entrySeq}`, 'Added offline chips');
+  }
+
+  /** Removes offline chips. Never counted as a loss, and cannot go below zero. */
+  removeOfflineChips(amount: number): ApplyResult {
+    if (!Number.isSafeInteger(amount) || amount <= 0) return { ok: false, error: 'Enter a whole number of chips above zero' };
+    if (amount > this.profile.bankroll) return { ok: false, error: `You only have ${this.profile.bankroll.toLocaleString()} offline chips` };
+    return this.apply('offline_remove', -amount, `offline_remove:${this.now()}:${this.entrySeq}`, 'Removed offline chips');
+  }
+
+  /** Sets the offline bankroll back to the starting amount. Lifetime P/L is untouched. */
+  resetOfflineBankroll(): ApplyResult {
+    const delta = DEFAULT_STARTING_BANKROLL - this.profile.bankroll;
+    return this.apply('offline_reset', delta, `offline_reset:${this.now()}:${this.entrySeq}`, `Reset offline bankroll to ${DEFAULT_STARTING_BANKROLL.toLocaleString()}`);
   }
 
   /** Records a completed hand for the player. Never changes the bankroll. */
@@ -324,8 +385,10 @@ export class Career {
     this.events.onChange?.();
   }
 
+  /** A completed cash session: its net is cash-out minus buy-ins, and it counts toward P/L. */
   recordCashSessionClosed(net: number): void {
     const p = this.profile;
+    this.countSession(net);
     p.cashSessions++;
     p.bestCashSession = Math.max(p.bestCashSession, net);
     p.worstCashSession = Math.min(p.worstCashSession, net);
@@ -335,8 +398,10 @@ export class Career {
     this.events.onChange?.();
   }
 
-  recordTournamentFinish(trophy: Trophy, cashed: boolean): void {
+  /** A completed tournament: `net` is the prize minus every entry and re-entry paid. */
+  recordTournamentFinish(trophy: Trophy, cashed: boolean, net: number): void {
     const p = this.profile;
+    this.countSession(net);
     p.tournamentsPlayed++;
     if (cashed) p.tournamentCashes++;
     if (trophy.place === 1) p.tournamentWins++;
@@ -346,6 +411,14 @@ export class Career {
     this.checkAchievements();
     this.enqueue([{ store: 'meta', key: PROFILE_KEY, value: p }]);
     this.events.onChange?.();
+  }
+
+  private countSession(net: number): void {
+    const p = this.profile;
+    p.sessionPL += net;
+    p.sessionsCompleted++;
+    if (net > 0) p.sessionsWon++;
+    else if (net < 0) p.sessionsLost++;
   }
 
   private checkAchievements(): void {

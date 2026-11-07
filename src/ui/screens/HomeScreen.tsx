@@ -1,6 +1,5 @@
 import { go, useService } from '../../app/context';
 import { levelTitle } from '../../career/achievements';
-import { RELOAD_AMOUNT } from '../../career/career';
 import { publishStats } from '../../stats/counters';
 import { PlayingCard } from '../components/Art';
 import { fmt, pct, signed } from '../format';
@@ -12,7 +11,7 @@ export function HomeScreen() {
   const stats = publishStats(p.counters);
   const level = career.level;
   const latest = recommendations[0];
-  const broke = career.bankroll < RELOAD_AMOUNT / 10;
+  const broke = career.bankroll < 1000;
 
   return (
     <div className="screen home">
@@ -39,18 +38,18 @@ export function HomeScreen() {
       {broke && (
         <section className="callout">
           <div>
-            <strong>You are nearly out of chips.</strong>
-            <p>Take a free {fmt(RELOAD_AMOUNT)}-chip reload to keep playing. Reloads never count as profit.</p>
+            <strong>You are nearly out of offline chips.</strong>
+            <p>Add as many as you like in Bankroll. Added chips never count as profit.</p>
           </div>
-          <button type="button" className="btn btn-gold" onClick={() => service.reloadBankroll()}>Reload</button>
+          <button type="button" className="btn btn-gold" onClick={() => go('bankroll')}>Add chips</button>
         </section>
       )}
 
       <section className="tile-row" aria-label="Career summary">
         <div className="tile">
-          <span>Bankroll</span>
+          <span>Offline bankroll</span>
           <b>{fmt(career.bankroll)}</b>
-          <small>{career.netProfit === 0 ? 'even so far' : `${signed(career.netProfit)} lifetime`}</small>
+          <small>{career.netProfit === 0 ? 'even so far' : `${signed(career.netProfit)} lifetime P/L`}</small>
         </div>
         <div className="tile">
           <span>Level {level.level}</span>

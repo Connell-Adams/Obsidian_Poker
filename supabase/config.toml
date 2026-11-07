@@ -1,0 +1,4 @@
+# Used by the Supabase CLI when deploying the poker function.
+[functions.poker]
+# The function verifies every caller's sign-in token itself, using Supabase Auth.
+verify_jwt = false

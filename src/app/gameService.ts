@@ -2,7 +2,7 @@ import { BotBrain } from '../ai/brain';
 import type { EmotionalState } from '../ai/emotions';
 import { type BotProfile, createBotProfile, NAMED_PROS } from '../ai/profiles';
 import { AudioManager } from '../audio/audioManager';
-import { Career, type LedgerKind, MAX_STORED_HANDS, RELOAD_AMOUNT } from '../career/career';
+import { type ApplyResult, Career, type LedgerKind, MAX_STORED_HANDS } from '../career/career';
 import { applyDrift, applyTournamentResult, initialPros, isValidPros, type ProRecord } from '../career/leaderboard';
 import type { HandReview } from '../coach/analyzer';
 import type { EquityQuery, EquityQueryResult } from '../coach/equityQuery';
@@ -672,7 +672,7 @@ export class GameService {
     else void this.career.queueWrite(clearSaved);
     const director = session.director!;
     const cost = config.buyIn * entries;
-    this.career.recordTournamentFinish({ id, ts: Date.now(), name: config.name, place, entrants: director.totalEntries, prize }, prize > 0);
+    this.career.recordTournamentFinish({ id, ts: Date.now(), name: config.name, place, entrants: director.totalEntries, prize }, prize > 0, prize - cost);
     this.audio.play({ kind: place === 1 ? 'victory' : 'elimination', tableId: id, chips: 0, bigBlind: 1 });
     this.lastSummary = {
       kind: 'tournament',
@@ -1017,7 +1017,8 @@ export class GameService {
       this.pushToast({ kind: 'info', title: 'Session settled', body: `${chips.toLocaleString()} chips returned to your bankroll.` });
     } else {
       const left = open.snapshot.players.filter((p) => p.status === 'active').length;
-      this.career.recordTournamentFinish({ id: open.id, ts: Date.now(), name: open.snapshot.config.name, place: left, entrants: open.snapshot.totalEntries, prize: 0 }, false);
+      const entries = open.snapshot.players.find((p) => p.isHuman)?.entries ?? 1;
+      this.career.recordTournamentFinish({ id: open.id, ts: Date.now(), name: open.snapshot.config.name, place: left, entrants: open.snapshot.totalEntries, prize: 0 }, false, -open.snapshot.config.buyIn * entries);
       this.pushToast({ kind: 'info', title: 'Tournament forfeited', body: 'Your entry stays in the prize pool.' });
     }
     void this.career.queueWrite([{ store: 'meta', key: OPEN_SESSION_KEY }]);
@@ -1026,11 +1027,22 @@ export class GameService {
 
   // ------------------------------------------------------------ career actions
 
-  reloadBankroll(): void {
-    const result = this.career.reload();
-    if (!result.ok) this.pushToast({ kind: 'warning', title: 'Reload not available', body: result.error });
-    else this.pushToast({ kind: 'info', title: 'Bankroll reloaded', body: `${RELOAD_AMOUNT.toLocaleString()} free chips added. They do not count as profit.` });
+  addOfflineChips(amount: number): ApplyResult {
+    const result = this.career.addOfflineChips(amount);
     this.bump();
+    return result;
+  }
+
+  removeOfflineChips(amount: number): ApplyResult {
+    const result = this.career.removeOfflineChips(amount);
+    this.bump();
+    return result;
+  }
+
+  resetOfflineBankroll(): ApplyResult {
+    const result = this.career.resetOfflineBankroll();
+    this.bump();
+    return result;
   }
 
   async resetCareer(): Promise<void> {

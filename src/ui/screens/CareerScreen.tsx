@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useService } from '../../app/context';
 import { ordinal } from '../../app/gameService';
 import { ACHIEVEMENTS, levelTitle } from '../../career/achievements';
-import { type LedgerEntry, RELOAD_AMOUNT } from '../../career/career';
+import type { LedgerEntry } from '../../career/career';
 import { LineChart } from '../components/Charts';
 import { cx, dateTime, fmt, fmtShort, signed } from '../format';
 
@@ -40,8 +40,8 @@ export function CareerScreen() {
       </header>
 
       <section className="tile-row">
-        <div className="tile"><span>Bankroll</span><b>{fmt(career.bankroll)}</b><small>started with {fmt(p.startingBankroll)}</small></div>
-        <div className="tile"><span>Net profit</span><b className={career.netProfit > 0 ? 'pos' : career.netProfit < 0 ? 'neg' : ''}>{signed(career.netProfit)}</b><small>{p.reloads ? `excludes ${fmt(p.reloads)} in reloads` : 'all from play'}</small></div>
+        <div className="tile"><span>Offline bankroll</span><b>{fmt(career.bankroll)}</b><small>add or remove in Bankroll</small></div>
+        <div className="tile"><span>Offline lifetime P/L</span><b className={career.netProfit > 0 ? 'pos' : career.netProfit < 0 ? 'neg' : ''}>{signed(career.netProfit)}</b><small>from {fmt(p.sessionsCompleted)} completed sessions</small></div>
         <div className="tile"><span>Hands played</span><b>{fmt(p.handsPlayed)}</b><small>{fmt(p.cashHands)} cash, {fmt(p.tournamentHands)} tournament</small></div>
         <div className="tile"><span>Best cash session</span><b>{signed(p.bestCashSession)}</b><small>{fmt(p.cashSessions)} sessions</small></div>
         <div className="tile"><span>Biggest pot won</span><b>{fmt(p.biggestPotWon)}</b></div>
@@ -53,15 +53,7 @@ export function CareerScreen() {
         </div>
       </section>
 
-      {career.bankroll < RELOAD_AMOUNT / 10 && (
-        <div className="callout">
-          <div>
-            <strong>Running low.</strong>
-            <p>Take a free {fmt(RELOAD_AMOUNT)}-chip reload. It is tracked separately and does not count as profit.</p>
-          </div>
-          <button type="button" className="btn btn-gold" onClick={() => service.reloadBankroll()}>Reload</button>
-        </div>
-      )}
+      <p className="muted">This page covers offline play against bots. Online results are on the Bankroll page.</p>
 
       <section className="grid-2">
         <div className="panel">

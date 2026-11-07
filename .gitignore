@@ -4,3 +4,5 @@ dist/
 .claude/
 *.log
 coverage/
+.env.local
+*.local

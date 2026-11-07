@@ -49,6 +49,9 @@ describe('bankroll ledger', () => {
     expect(career.bankroll).toBe(DEFAULT_STARTING_BANKROLL + 2300);
     expect(career.profile.cashBuyIns).toBe(5000);
     expect(career.profile.cashWinnings).toBe(7300);
+    // Only a completed session counts toward P/L.
+    expect(career.netProfit).toBe(0);
+    career.recordCashSessionClosed(2300);
     expect(career.netProfit).toBe(2300);
   });
 
@@ -75,13 +78,78 @@ describe('bankroll ledger', () => {
     expect(career.bankroll).toBeGreaterThanOrEqual(0);
   });
 
-  it('only allows reloads when nearly broke and never counts them as profit', async () => {
-    const career = await Career.load(new MemoryStore(), now, 5000);
-    expect(career.reload().ok).toBe(false);
-    career.apply('cash_buyin', -4500, 'b', 'x');
-    expect(career.reload().ok).toBe(true);
-    expect(career.profile.reloads).toBeGreaterThan(0);
-    expect(career.netProfit).toBe(-4500);
+  it('adds and removes offline chips freely without touching profit or loss', async () => {
+    const career = await Career.load(new MemoryStore(), now);
+    expect(career.addOfflineChips(50_000).ok).toBe(true);
+    expect(career.bankroll).toBe(DEFAULT_STARTING_BANKROLL + 50_000);
+    expect(career.removeOfflineChips(70_000).ok).toBe(true);
+    expect(career.bankroll).toBe(DEFAULT_STARTING_BANKROLL - 20_000);
+    expect(career.netProfit).toBe(0);
+    expect(career.profile.chipsAdded).toBe(50_000);
+    expect(career.profile.chipsRemoved).toBe(70_000);
+    await career.flush();
+    const ledger = await career.ledger();
+    expect(ledger.map((e) => e.kind)).toEqual(['start', 'offline_add', 'offline_remove']);
+    expect(ledger.reduce((s, e) => s + e.amount, 0)).toBe(career.bankroll);
+  });
+
+  it('rejects bad offline adjustments without changing anything', async () => {
+    const career = await Career.load(new MemoryStore(), now);
+    for (const bad of [0, -5, 1.5, Number.NaN, Infinity]) {
+      expect(career.addOfflineChips(bad).ok).toBe(false);
+      expect(career.removeOfflineChips(bad).ok).toBe(false);
+    }
+    expect(career.removeOfflineChips(DEFAULT_STARTING_BANKROLL + 1).ok).toBe(false);
+    expect(career.addOfflineChips(1_000_000_000).ok).toBe(false);
+    expect(career.bankroll).toBe(DEFAULT_STARTING_BANKROLL);
+    expect(career.removeOfflineChips(DEFAULT_STARTING_BANKROLL).ok).toBe(true);
+    expect(career.bankroll).toBe(0);
+  });
+
+  it('resets the offline bankroll to the start from above or below, keeping P/L', async () => {
+    const career = await Career.load(new MemoryStore(), now);
+    career.apply('cash_buyin', -5000, 'b', 'x');
+    career.apply('cash_cashout', 8000, 'c', 'x');
+    career.recordCashSessionClosed(3000);
+    expect(career.netProfit).toBe(3000);
+    expect(career.resetOfflineBankroll().ok).toBe(true);
+    expect(career.bankroll).toBe(DEFAULT_STARTING_BANKROLL);
+    career.removeOfflineChips(10_000);
+    expect(career.resetOfflineBankroll().ok).toBe(true);
+    expect(career.bankroll).toBe(DEFAULT_STARTING_BANKROLL);
+    expect(career.netProfit).toBe(3000);
+    expect(career.profile.bankrollResets).toBe(2);
+  });
+
+  it('counts only completed sessions toward offline P/L', async () => {
+    const career = await Career.load(new MemoryStore(), now);
+    career.apply('cash_buyin', -2000, 'b1', 'buy-in');
+    expect(career.netProfit).toBe(0); // a buy-in alone is not a loss
+    career.apply('cash_cashout', 1500, 'c1', 'cash-out');
+    career.recordCashSessionClosed(-500);
+    career.apply('tournament_fee', -1000, 't1', 'entry');
+    career.apply('tournament_prize', 4000, 'p1', 'prize');
+    career.recordTournamentFinish({ id: 'T', ts: 1, name: 'T', place: 1, entrants: 9, prize: 4000 }, true, 3000);
+    expect(career.netProfit).toBe(2500);
+    expect(career.profile.sessionsCompleted).toBe(2);
+    expect(career.profile.sessionsWon).toBe(1);
+    expect(career.profile.sessionsLost).toBe(1);
+  });
+
+  it('upgrades a version 1 profile with an estimated P/L', async () => {
+    const store = new MemoryStore();
+    const a = await Career.load(store, now);
+    a.apply('cash_buyin', -3000, 'b', 'x');
+    a.apply('reload', 10000, 'r', 'x');
+    await a.flush();
+    const saved = (await store.get<Record<string, unknown>>('meta', 'profile'))!;
+    for (const key of ['sessionPL', 'sessionsCompleted', 'sessionsWon', 'sessionsLost', 'chipsAdded', 'chipsRemoved', 'bankrollResets']) delete saved[key];
+    saved.schema = 1;
+    await store.commit([{ store: 'meta', key: 'profile', value: saved }]);
+    const b = await Career.load(store, now);
+    expect(b.loadWarning).toBeNull();
+    expect(b.netProfit).toBe(-3000);
+    expect(b.profile.schema).toBe(2);
   });
 });
 
@@ -205,11 +273,11 @@ describe('progression', () => {
 
   it('records tournament trophies and wins', async () => {
     const career = await Career.load(new MemoryStore(), now);
-    career.recordTournamentFinish({ id: 'T', ts: 1, name: 'Big One', place: 1, entrants: 45, prize: 5000 }, true);
+    career.recordTournamentFinish({ id: 'T', ts: 1, name: 'Big One', place: 1, entrants: 45, prize: 5000 }, true, 4000);
     expect(career.profile.tournamentWins).toBe(1);
     expect(career.profile.trophies).toHaveLength(1);
     expect(career.profile.achievements.first_win).toBeDefined();
-    career.recordTournamentFinish({ id: 'U', ts: 2, name: 'Small', place: 30, entrants: 45, prize: 0 }, false);
+    career.recordTournamentFinish({ id: 'U', ts: 2, name: 'Small', place: 30, entrants: 45, prize: 0 }, false, -1000);
     expect(career.profile.tournamentsPlayed).toBe(2);
     expect(career.profile.trophies).toHaveLength(1);
     expect(career.profile.bestTournamentPlace).toBe(1);
