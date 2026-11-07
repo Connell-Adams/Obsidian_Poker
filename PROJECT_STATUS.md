@@ -33,7 +33,7 @@ Deployed to https://connell-adams.github.io/Obsidian_Poker/ on 2026-11-07 (merge
 | 7 | Online multiplayer with accounts | Done and tested live: two real accounts played each other on the deployed site |
 | 8 | Server-authoritative chip transactions | Done and tested against real PostgreSQL |
 | 9 | GitHub Pages deployment | Done: the public URL loads, connects to Supabase, no console errors |
-| 10 | Test on the deployed site | Done, except a live bankruptcy reset (see below) |
+| 10 | Test on the deployed site | Done, including a live bankruptcy reset |
 
 **The game is online.** On 2026-11-07 two separate real accounts (test2 and test3) joined rooms by code on the deployed site and played each other, including an all-in showdown, and cashed out with correct balances.
 
@@ -68,7 +68,7 @@ Deployed to https://connell-adams.github.io/Obsidian_Poker/ on 2026-11-07 (merge
 | `tests/online/server.test.ts` | The real game server against that database. Two accounts play 25 hands with total chips checked after every action. Two simultaneous identical actions let exactly one through. Also out-of-turn and illegal moves, timeouts, leaving mid-hand, and hidden cards stripped from stored hands | 11 passing |
 | `tests/career.test.ts` | Offline add, remove and reset, P/L from completed sessions only, and the profile upgrade | passing |
 | Everything else | The existing engine, AI, tournaments, persistence and UI | passing |
-| **Total** | | **292 passing** |
+| **Total** | | **294 passing** |
 
 **Browser check, without a backend:** add, remove and reset offline chips, with P/L unchanged and all three in the transaction list. The online sections show "not connected", and offline play is unaffected.
 
@@ -81,10 +81,18 @@ Deployed to https://connell-adams.github.io/Obsidian_Poker/ on 2026-11-07 (merge
 - Private cards: from test2's browser, every `hand_private` row readable belongs to test2, `room_secrets` is refused, public table events carry no card values, and the stored hand won by a fold hides both hands while the showdown hand shows them.
 - The second browser (the in-app browser pane) loaded the same account with the same balance and history, which covers cross-device sync.
 
-**Bug found and fixed live:** a host who had left their own room stayed stuck on that table, with no seat and no buttons, even after a reload, because a host can still read the room. The room screen now returns to the lobby whenever you have no seat (commit e6c1fc7).
+**Live bankruptcy test, 2026-11-07**, in a 100/200 room:
+- test2 bought in for 24,500, leaving 330 in the wallet. Calling the reset directly while those chips were seated was refused with `not_bankrupt`.
+- test3 lost its whole stack in all-in hands, leaving 0 seated and 0 in the wallet. The Bankroll page showed YOU'RE BROKE!, and RESET TO 25,000 CHIPS worked once.
+- test3's ledger shows "Bankruptcy reset +25,000". Its lifetime P/L stayed at −24,800, exactly the opposite of test2's +24,800, so the reset was not counted as winnings.
+- Balances: test2 has 49,800 (25,000 + 24,800) and test3 has 25,200 (25,000 − 24,800 + 25,000 reset). Together that's 75,000: the original 50,000 plus one reset, with no chips created or lost.
+- A player who left mid-hand was folded out and lost only the blind already posted, as designed.
+
+**Bugs found and fixed live:**
+- A host who had left their own room stayed stuck on that table, with no seat and no buttons, even after a reload, because a host can still read the room. The room screen now returns to the lobby whenever you have no seat (commit e6c1fc7).
+- After a player left, the others still saw them seated from the last hand. Between hands, players who have left are now cleared from the table (commit f6f8bfb).
 
 **Not tested live yet:**
-- The bankruptcy reset, which needs an account to lose about 24,500 more chips. Its rules are covered by the database tests.
 - Password reset by email.
 - GitHub sign-in, which is off until an OAuth app is created.
 
