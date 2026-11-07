@@ -115,6 +115,8 @@ export class RoomConnection {
   connected: string[] = [];
   error: string | null = null;
   closed = false;
+  /** Called once when the player no longer has a seat here, so the screen can return to the lobby. */
+  onGone: (() => void) | null = null;
   private view: TableView | null = null;
   private listeners = new Set<() => void>();
   private channel: RealtimeChannel | null = null;
@@ -205,12 +207,15 @@ export class RoomConnection {
       this.emit();
       return;
     }
-    if (!room.data) {
-      // Not a member any more: the room is no longer visible.
+    // Not seated any more: the room is gone, or we left it. A host can still read a
+    // room they created after leaving it, so having a seat is what counts.
+    const seated = ((seats.data ?? []) as Array<Record<string, unknown>>).some((s) => String(s.user_id) === uid);
+    if (!room.data || !seated) {
       this.error = null;
       this.room = null;
       this.closed = true;
       this.emit();
+      this.onGone?.();
       return;
     }
     const r = room.data as Record<string, unknown>;

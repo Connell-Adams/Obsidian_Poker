@@ -135,13 +135,13 @@ function Room({ roomId, onExit }: { roomId: string; onExit: () => void }) {
   const [topUp, setTopUp] = useState(0);
 
   useEffect(() => {
+    conn.onGone = () => {
+      rememberRoom(null);
+      onExit();
+    };
     void conn.open().catch((e: unknown) => setNote(e instanceof Error ? e.message : String(e)));
     return () => conn.close();
   }, [conn]);
-
-  useEffect(() => {
-    if (conn.closed && !conn.room) onExit();
-  });
 
   const appearance = useMemo(
     () => ({ theme: settings.tableTheme, cardFace: settings.cardFace, cardBack: settings.cardBack, chipStyle: settings.chipStyle, animation: settings.animationSpeed }),
