@@ -84,7 +84,9 @@ export function buildOnlineView(room: RoomInfo, pub: PublicTable | null, seats: 
   for (const e of pub?.events ?? []) view = applyEvent(view, e, ctx());
 
   // Players seated outside the hand: just joined, sitting out, or between hands.
-  const seatsOut = view.seats.map((v) => v);
+  // Between hands, anyone who has left since the last hand is cleared from the table.
+  const seatedIds = new Set(seats.map((s) => s.user_id));
+  const seatsOut = view.seats.map((v) => (v && !pub?.handActive && !seatedIds.has(v.id) ? null : v));
   for (const s of seats) {
     if (seatsOut[s.seat] && inHand.has(s.seat) && pub?.handActive) continue;
     const base = seatsOut[s.seat] ?? emptySeatView({ seat: s.seat, id: s.user_id, name: s.name, isHuman: s.user_id === myId, avatar: s.avatar, stack: s.stack });
