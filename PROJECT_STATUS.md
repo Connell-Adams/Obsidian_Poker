@@ -1,6 +1,6 @@
 # Project status: online accounts and separate bankrolls
 
-Branch: `online-accounts` (not yet merged or deployed; the live site still runs the previous version).
+Deployed to https://connell-adams.github.io/Obsidian_Poker/ on 2026-11-07 (merged to `main`). Supabase project `tiejpuwqwuaankwofcez`: database migration applied, `poker` Edge Function deployed.
 
 ## Architecture
 
@@ -29,13 +29,13 @@ Branch: `online-accounts` (not yet merged or deployed; the live site still runs 
 | 3 | Offline chip controls | Done and tested |
 | 4 | Online bankroll and bankruptcy reset rules | Done and tested against real PostgreSQL |
 | 5 | Separate lifetime P/L for each mode | Done and tested |
-| 6 | Authentication and cloud persistence | Code done. **Waiting for your Supabase project** |
-| 7 | Online multiplayer with accounts | Code done, server tested with two accounts. **Not yet run live** |
+| 6 | Authentication and cloud persistence | Done and tested live: two real accounts signed up, confirmed by email and signed in; the same balance and history load on a second browser |
+| 7 | Online multiplayer with accounts | Done and tested live: two real accounts played each other on the deployed site |
 | 8 | Server-authoritative chip transactions | Done and tested against real PostgreSQL |
-| 9 | GitHub Pages deployment | Workflow exists. Needs the Supabase URL and key, then a merge to `main` |
-| 10 | Test on the deployed site | **Not started** |
+| 9 | GitHub Pages deployment | Done: the public URL loads, connects to Supabase, no console errors |
+| 10 | Test on the deployed site | Done, except a live bankruptcy reset (see below) |
 
-**The game is not fully online yet.** That needs two real accounts to connect and play each other on the deployed site.
+**The game is online.** On 2026-11-07 two separate real accounts (test2 and test3) joined rooms by code on the deployed site and played each other, including an all-in showdown, and cashed out with correct balances.
 
 ## Rules as built
 
@@ -72,20 +72,21 @@ Branch: `online-accounts` (not yet merged or deployed; the live site still runs 
 
 **Browser check, without a backend:** add, remove and reset offline chips, with P/L unchanged and all three in the transaction list. The online sections show "not connected", and offline play is unaffected.
 
-**Not tested yet**, because it needs your Supabase project:
-- Sign-up, email confirmation, sign-in, sign-out and password reset against real Supabase Auth.
-- The Edge Function wrapper `supabase/functions/poker/index.ts`. The game logic it calls is tested, but the wrapper itself has never run.
-- Realtime updates, presence and reconnecting.
-- Two real accounts playing on the deployed site.
+**Live test on the deployed site, 2026-11-07**, with two real accounts in two browsers:
+- Sign-up with email confirmation and sign-in work. Each account started with 25,000 online chips and a "Starting chips" ledger entry.
+- Three rooms were played across the two accounts: create, join by code, automatic dealing, realtime updates, presence dots, folds, an all-in showdown and run-out, and cash-out.
+- Chips were conserved after every hand, and the two wallets together still total exactly 50,000.
+- test2's wallet, ledger and P/L match by hand: 25,000 − 2,000 + 4,000 − 2,000 + 1,830 − 2,000 = 24,830, and lifetime P/L is −170 over 3 sessions (1 won, 2 lost).
+- Offline chips stayed at 25,000 throughout, so online play never touches them.
+- Private cards: from test2's browser, every `hand_private` row readable belongs to test2, `room_secrets` is refused, public table events carry no card values, and the stored hand won by a fold hides both hands while the showdown hand shows them.
+- The second browser (the in-app browser pane) loaded the same account with the same balance and history, which covers cross-device sync.
 
-## What you need to do
+**Bug found and fixed live:** a host who had left their own room stayed stuck on that table, with no seat and no buttons, even after a reload, because a host can still read the room. The room screen now returns to the lobby whenever you have no seat (commit e6c1fc7).
 
-See the setup steps at the end of the latest chat message. In short:
-1. Create a Supabase project.
-2. Run the SQL file.
-3. Set the redirect URLs.
-4. Send the project URL and publishable key.
-5. Run `npx supabase login` so the game server can be deployed.
+**Not tested live yet:**
+- The bankruptcy reset, which needs an account to lose about 24,500 more chips. Its rules are covered by the database tests.
+- Password reset by email.
+- GitHub sign-in, which is off until an OAuth app is created.
 
 ## Files added
 
